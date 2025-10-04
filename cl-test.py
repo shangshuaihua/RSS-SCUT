@@ -1,10 +1,10 @@
-# rss_generator.py (V16 - 最终版:CDATA+双标签)
+# rss_generator.py (V17 - 修复中文编码)
 import requests
 import time
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-import xml.etree.ElementTree as ET
+import html
 
 GITHUB_PAGES_URL = "https://shangshuaihua.github.io/RSS-SCUT/rss.xml"
 BASE_SITE_URL = "https://jw.scut.edu.cn"
@@ -57,18 +57,17 @@ def scrape_article_content(url):
         return False, ""
 
 
-def create_cdata_element(parent, tag, text):
-    """创建包含CDATA的元素"""
-    elem = ET.SubElement(parent, tag)
-    elem.text = f'<![CDATA[{text}]]>'
-    return elem
+def escape_xml(text):
+    """转义XML特殊字符"""
+    if not text:
+        return ''
+    return html.escape(text, quote=False)
 
 
 def generate_rss_feed(notice_list):
-    """参考三花AI: CDATA + 双标签结构"""
+    """生成RSS - 修复中文编码问题"""
     print("\n📝 生成RSS...")
 
-    # 手动构建XML字符串以支持CDATA
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">',
@@ -91,7 +90,6 @@ def generate_rss_feed(notice_list):
         title = item.get('title', '无标题')
         pub_date = item.get('createTime', 'N/A')
 
-        # 发布时间
         pub_date_str = ''
         try:
             dt = datetime.strptime(pub_date, '%Y.%m.%d').replace(tzinfo=beijing_tz)
@@ -99,10 +97,8 @@ def generate_rss_feed(notice_list):
         except:
             pass
 
-        # 抓取正文
         has_content, body = scrape_article_content(url)
 
-        # 构建HTML内容
         meta = f'''<div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:15px;border-radius:8px;margin-bottom:20px">
 <p style="margin:5px 0">📌 {news_type} | 📅 {pub_date} | 🔗 <a href="{url}" style="color:#ffd700">原文</a></p></div>'''
 
@@ -113,16 +109,16 @@ def generate_rss_feed(notice_list):
             full_html = f'''{meta}<div style="text-align:center;padding:40px;background:#f9f9f9;border-radius:8px">
 <p>⚠️ 无法提取正文</p><p><a href="{url}" style="background:#667eea;color:white;padding:10px 20px;text-decoration:none;border-radius:5px">查看原文</a></p></div>'''
 
-        # 转义CDATA内容
+        # 转义HTML中的特殊XML字符
         full_html_escaped = full_html.replace(']]>', ']]]]><![CDATA[>')
         description_text = f"{news_type} | {pub_date}"
+        title_text = f"【{news_type}】{title}"
 
-        # 构建item (参考三花AI结构)
         lines.extend([
             '    <item>',
-            f'      <title><![CDATA[【{news_type}】{title}]]></title>',
-            f'      <link>{url}</link>',
-            f'      <guid isPermaLink="true">{url}</guid>',
+            f'      <title><![CDATA[{title_text}]]></title>',
+            f'      <link>{escape_xml(url)}</link>',
+            f'      <guid isPermaLink="true">{escape_xml(url)}</guid>',
             f'      <pubDate>{pub_date_str}</pubDate>' if pub_date_str else '',
             f'      <description><![CDATA[{description_text}]]></description>',
             f'      <content:encoded><![CDATA[{full_html_escaped}]]></content:encoded>',
@@ -131,12 +127,9 @@ def generate_rss_feed(notice_list):
 
         time.sleep(0.5)
 
-    lines.extend([
-        '  </channel>',
-        '</rss>'
-    ])
+    lines.extend(['  </channel>', '</rss>'])
 
-    # 过滤空行并写入文件
+    # 使用UTF-8编码写入,不添加BOM
     xml_content = '\n'.join([line for line in lines if line.strip()])
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(xml_content)
@@ -146,7 +139,7 @@ def generate_rss_feed(notice_list):
 
 def main():
     print("=" * 50)
-    print("华工教务处RSS V16 - CDATA标准版")
+    print("华工教务处RSS V17 - 修复编码版")
     print("=" * 50)
 
     notices = fetch_latest_notices()
