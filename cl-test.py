@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 GITHUB_PAGES_URL = "https://shangshuaihua.github.io/RSS-SCUT/rss.xml"
 BASE_SITE_URL = "https://jw.scut.edu.cn"
 API_URL = f"{BASE_SITE_URL}/zhinan/cms/article/v2/findInformNotice.do"
-ITEMS_TO_FETCH = 30
+ITEMS_TO_FETCH = 5
 OUTPUT_FILE = "rss.xml"
 TAG_MAP = {6: "信息", 1: "选课", 2: "考试", 3: "实践", 4: "交流", 5: "教师"}
 
