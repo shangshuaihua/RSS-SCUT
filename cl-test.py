@@ -1,4 +1,4 @@
-# rss_generator.py (V14 - 手动生成RSS,彻底解决)
+# rss_generator.py (V15 - RSSHub风格版)
 import requests
 import time
 from datetime import datetime, timezone, timedelta
@@ -7,7 +7,6 @@ from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
-# --- 配置 ---
 GITHUB_PAGES_URL = "https://shangshuaihua.github.io/RSS-SCUT/rss.xml"
 BASE_SITE_URL = "https://jw.scut.edu.cn"
 API_URL = f"{BASE_SITE_URL}/zhinan/cms/article/v2/findInformNotice.do"
@@ -17,7 +16,7 @@ TAG_MAP = {6: "信息", 1: "选课", 2: "考试", 3: "实践", 4: "交流", 5: "
 
 
 def fetch_latest_notices():
-    print(f"📡 获取通知...")
+    print("📡 获取通知...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0', 'Referer': f'{BASE_SITE_URL}/zhinan/cms/toPosts.do'}
         payload = {'category': '0', 'tag': '0', 'pageNum': '1', 'pageSize': str(ITEMS_TO_FETCH), 'keyword': ''}
@@ -52,7 +51,7 @@ def scrape_article_content(url):
                         if elem.get(attr, '').startswith(('/', '../')):
                             elem[attr] = urljoin(BASE_SITE_URL, elem[attr])
                 return True, str(content)
-        print(f"  ⚠ 无模板")
+        print("  ⚠ 无模板")
         return False, ""
     except Exception as e:
         print(f"  ❌ {e}")
@@ -60,28 +59,19 @@ def scrape_article_content(url):
 
 
 def generate_rss_feed(notice_list):
-    """手动生成RSS XML,确保使用 content:encoded"""
+    """RSSHub风格: 完整内容放在description中"""
     print("\n📝 生成RSS...")
 
-    # 创建RSS根元素
-    rss = ET.Element('rss', {
-        'version': '2.0',
-        'xmlns:content': 'http://purl.org/rss/1.0/modules/content/',
-        'xmlns:atom': 'http://www.w3.org/2005/Atom'
-    })
-
+    rss = ET.Element('rss', {'version': '2.0', 'xmlns:atom': 'http://www.w3.org/2005/Atom'})
     channel = ET.SubElement(rss, 'channel')
 
-    # 频道信息
     ET.SubElement(channel, 'title').text = '华南理工大学教务处通知'
     ET.SubElement(channel, 'link').text = 'https://jw.scut.edu.cn/zhinan/cms/index.do'
     ET.SubElement(channel, 'description').text = '华工教务处通知订阅'
     ET.SubElement(channel, 'language').text = 'zh-CN'
     ET.SubElement(channel, 'lastBuildDate').text = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
     ET.SubElement(channel, '{http://www.w3.org/2005/Atom}link', {
-        'href': GITHUB_PAGES_URL,
-        'rel': 'self',
-        'type': 'application/rss+xml'
+        'href': GITHUB_PAGES_URL, 'rel': 'self', 'type': 'application/rss+xml'
     })
 
     beijing_tz = timezone(timedelta(hours=8))
@@ -94,61 +84,49 @@ def generate_rss_feed(notice_list):
         title = item.get('title', '无标题')
         pub_date = item.get('createTime', 'N/A')
 
-        # 创建条目
         entry = ET.SubElement(channel, 'item')
         ET.SubElement(entry, 'title').text = f"【{news_type}】{title}"
         ET.SubElement(entry, 'link').text = url
         ET.SubElement(entry, 'guid', {'isPermaLink': 'true'}).text = url
 
-        # 发布时间
         try:
             dt = datetime.strptime(pub_date, '%Y.%m.%d').replace(tzinfo=beijing_tz)
-            pub_date_utc = dt.astimezone(timezone.utc)
-            ET.SubElement(entry, 'pubDate').text = pub_date_utc.strftime('%a, %d %b %Y %H:%M:%S +0000')
+            ET.SubElement(entry, 'pubDate').text = dt.astimezone(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
         except:
             pass
 
-        # 简短描述(纯文本)
-        ET.SubElement(entry, 'description').text = f"{news_type} | {pub_date}"
-
-        # 抓取正文
         has_content, body = scrape_article_content(url)
 
-        # 构建完整HTML
+        # RSSHub风格: 元信息 + 正文都放在description
         meta = f'''<div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:15px;border-radius:8px;margin-bottom:20px">
 <p style="margin:5px 0">📌 {news_type} | 📅 {pub_date} | 🔗 <a href="{url}" style="color:#ffd700">原文</a></p></div>'''
 
         if has_content:
-            html = f"{meta}<div>{body}</div>"
+            full_html = f"{meta}<div>{body}</div>"
             success += 1
         else:
-            html = f'''{meta}<div style="text-align:center;padding:40px;background:#f9f9f9;border-radius:8px">
+            full_html = f'''{meta}<div style="text-align:center;padding:40px;background:#f9f9f9;border-radius:8px">
 <p>⚠️ 无法提取正文</p><p><a href="{url}" style="background:#667eea;color:white;padding:10px 20px;text-decoration:none;border-radius:5px">查看原文</a></p></div>'''
 
-        # ★★★ 关键: 使用 content:encoded 标签 ★★★
-        content_elem = ET.SubElement(entry, '{http://purl.org/rss/1.0/modules/content/}encoded')
-        content_elem.text = html
+        # 关键: 只使用description,不使用content:encoded
+        ET.SubElement(entry, 'description').text = full_html
 
         time.sleep(0.5)
 
-    # 格式化输出
     xml_str = ET.tostring(rss, encoding='utf-8', method='xml')
     dom = minidom.parseString(xml_str)
     pretty_xml = dom.toprettyxml(indent='  ', encoding='UTF-8')
 
-    # 移除多余空行
     lines = [line for line in pretty_xml.decode('utf-8').split('\n') if line.strip()]
-    final_xml = '\n'.join(lines)
-
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        f.write(final_xml)
+        f.write('\n'.join(lines))
 
     print(f"✅ 完成! 总数:{len(notice_list)} | 有正文:{success}")
 
 
 def main():
     print("=" * 50)
-    print("华工教务处RSS V14")
+    print("华工教务处RSS V15 - RSSHub风格")
     print("=" * 50)
 
     notices = fetch_latest_notices()
