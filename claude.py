@@ -164,8 +164,10 @@ def generate_rss_feed(notice_list):
 </div>
 """
 
-        # ★★★ 关键: 只调用一次内容设置,避免重复显示 ★★★
+        # ★★★ 关键: 只设置content,不设置description,避免重复显示 ★★★
         fe.content(full_html, type='html')
+
+        # 注意: 故意不调用 fe.description(),因为某些阅读器会将其当作独立条目
 
         time.sleep(0.5)  # 礼貌延迟
 
